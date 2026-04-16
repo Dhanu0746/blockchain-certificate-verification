@@ -66,7 +66,7 @@ app.post("/issue", upload.single("file"), async (req, res) => {
       .update(req.file.buffer)
       .digest("hex");
 
-    const hashBytes32 = "0x" + hashHex;
+    const hashBytes32 = ethers.zeroPadValue("0x" + hashHex, 32);
 
     const ipfsCid = await uploadToIPFS(
       req.file.buffer,
@@ -117,29 +117,17 @@ app.post("/verify", upload.single("file"), async (req, res) => {
       return res.json({ status: "NOT_FOUND" });
     }
 
-    const [issuer, storedHash, ipfsCid, issuedAt] = cert;
+    const [issuer, storedHash, ipfsCid, issuedAt, revoked] = cert;
 
-    // ✅ Hash mismatch → TAMPERED
-    if (storedHash.toLowerCase() !== computedHash.toLowerCase()) {
-      return res.json({
-        status: "TAMPERED",
-        certificate: {
-          issuer,
-          ipfsCid,
-          issuedAt: issuedAt.toString(),
-        },
-      });
+    if (revoked) {
+      return res.json({ status: "REVOKED", certificate: { issuer, ipfsCid, issuedAt: issuedAt.toString() } });
     }
 
-    // ✅ Hash match → VALID
-    return res.json({
-      status: "VALID",
-      certificate: {
-        issuer,
-        ipfsCid,
-        issuedAt: issuedAt.toString(),
-      },
-    });
+    if (storedHash.toLowerCase() !== computedHash.toLowerCase()) {
+      return res.json({ status: "TAMPERED", certificate: { issuer, ipfsCid, issuedAt: issuedAt.toString() } });
+    }
+
+    return res.json({ status: "VALID", certificate: { issuer, ipfsCid, issuedAt: issuedAt.toString() } });
 
   } catch (err) {
     console.error("Verify Error:", err);
@@ -163,11 +151,11 @@ app.post("/revoke", async (req, res) => {
       txHash: tx.hash,
     });
   } catch (err) {
-  console.error("Revoke Error:", err.reason || err.message);
-  return res.status(500).json({
-    error: err.reason || err.message,
-  });
-}
+    console.error("Revoke Error:", err.reason || err.message);
+    return res.status(500).json({
+      error: err.reason || err.message,
+    });
+  }
 
 });
 
